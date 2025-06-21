@@ -31,10 +31,6 @@ class PredictionData(BaseModel):
     features: list = SALES_COLUMN_SELECTION
 
 
-class Prediction(BaseModel):
-    price: float
-
-
 class PredictionSubset(BaseModel):
     bedrooms: int
     bathrooms: int
@@ -51,7 +47,14 @@ class PredictionSubset(BaseModel):
 class Model(BaseModel):
     version: int
 
-    model_config = ConfigDict(extra="forbid")
+
+class Prediction(BaseModel):
+    price: float
+
+
+class ApiResponse(BaseModel):
+    model: Model
+    predictions: List[Prediction]
 
 
 def load_model(model_version: int) -> Pipeline:
@@ -143,7 +146,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/predictions/all")
-async def make_prediction(request_data: Request) -> List[Prediction]:
+async def make_prediction(request_data: Request) -> ApiResponse:
     """Endpoint to make predictions using the loaded model."""
     if app.state.model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
@@ -155,13 +158,16 @@ async def make_prediction(request_data: Request) -> List[Prediction]:
         columns="zipcode"
     )
     predictions = app.state.model.predict(data_df)
-    return [Prediction(price=price) for price in predictions]
+    return ApiResponse(
+        model=Model(version=app.state.latest_model_version),
+        predictions=[Prediction(price=price) for price in predictions],
+    )
 
 
 @app.post("/predictions/subset")
 async def make_prediction_subset(
     prediction_subset_list: List[PredictionSubset],
-) -> List[Prediction]:
+) -> ApiResponse:
     """Endpoint to make predictions using a subset of features."""
     if app.state.model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
@@ -171,7 +177,10 @@ async def make_prediction_subset(
         columns="zipcode"
     )
     predictions = app.state.model.predict(data_df)
-    return [Prediction(price=price) for price in predictions]
+    return ApiResponse(
+        model=Model(version=app.state.latest_model_version),
+        predictions=[Prediction(price=price) for price in predictions],
+    )
 
 
 @app.post("/models/update")
