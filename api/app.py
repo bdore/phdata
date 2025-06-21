@@ -1,17 +1,26 @@
 import logging
 import os
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 import pickle
 from contextlib import asynccontextmanager
-from pandas import read_csv
-from create_model import SALES_COLUMN_SELECTION
+from pandas import read_csv, DataFrame
 
 
 MODEL_DIR = "model"  # Directory where model files are stored
 DATA_DIR = "data"  # Directory where data files are stored
+SALES_COLUMN_SELECTION = [
+    "bedrooms",
+    "bathrooms",
+    "sqft_living",
+    "sqft_lot",
+    "floors",
+    "sqft_above",
+    "sqft_basement",
+    "zipcode",
+]
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
@@ -19,6 +28,21 @@ logger.setLevel(logging.INFO)
 
 class PredictionData(BaseModel):
     features: list = SALES_COLUMN_SELECTION
+
+
+class Prediction(BaseModel):
+    price: float
+
+
+class PredictionSubset(BaseModel):
+    bedrooms: int
+    bathrooms: int
+    sqft_living: float
+    sqft_lot: float
+    floors: int
+    sqft_above: float
+    sqft_basement: float
+    zipcode: str
 
 
 def load_model(model_name: str):
@@ -109,19 +133,32 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/predict")
-async def make_prediction(request_data: PredictionData):
+async def make_prediction(request_data: Request) -> List[Prediction]:
     """Endpoint to make predictions using the loaded model."""
     if app.state.model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
-    try:
-        input_data = {
-            "name": [request_data.name],
-            "value": [request_data.value],
-            "description": [request_data.description or ""],
-        }
-        input_df = read_csv(input_data)
-        prediction = app.state.model.predict(input_df)
-        return {"prediction": prediction.tolist()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    data = await request_data.json()
+    data_df = DataFrame(data)
+    data_df = data_df[SALES_COLUMN_SELECTION]
+    data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
+        columns="zipcode"
+    )
+    predictions = app.state.model.predict(data_df)
+    return [Prediction(price=price) for price in predictions]
+
+    # try:
+    #     input_data = {
+    #         "name": [request_data.name],
+    #         "value": [request_data.value],
+    #         "description": [request_data.description or ""],
+    #     }
+    #     input_df = read_csv(input_data)
+    #     prediction = app.state.model.predict(input_df)
+    #     return {"prediction": prediction.tolist()}
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))
+
+
+# @app.post("/predict_subset")
+# async def make_prediction_subset(request_data: Request) -> List[Prediction]:
