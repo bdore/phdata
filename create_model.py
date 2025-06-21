@@ -6,9 +6,11 @@ from typing import Tuple
 
 import pandas
 from sklearn import model_selection
-from sklearn import neighbors
+from sklearn import neighbors, ensemble
 from sklearn import pipeline
 from sklearn import preprocessing
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+
 
 SALES_PATH = "data/kc_house_data.csv"  # path to CSV with home sale data
 DEMOGRAPHICS_PATH = "data/kc_house_data.csv"  # path to CSV with demographics
@@ -68,16 +70,42 @@ def main():
         x, y, random_state=42
     )
 
-    model = pipeline.make_pipeline(
-        preprocessing.RobustScaler(), neighbors.KNeighborsRegressor()
-    ).fit(x_train, y_train)
-
     output_dir = pathlib.Path(OUTPUT_DIR)
     output_dir.mkdir(exist_ok=True)
 
-    # Output model artifacts: pickled model and JSON list of features
-    pickle.dump(model, open(output_dir / "model_1.pkl", "wb"))
-    json.dump(list(x_train.columns), open(output_dir / "model_features_1.json", "w"))
+    pipelines_list = [
+        pipeline.make_pipeline(
+            preprocessing.RobustScaler(), neighbors.KNeighborsRegressor()
+        ),
+        pipeline.make_pipeline(
+            ensemble.HistGradientBoostingRegressor(
+                max_iter=200, random_state=42, quantile=0.8
+            ),
+        ),
+    ]
+
+    for i, pipe in enumerate(pipelines_list):
+        model = pipe.fit(x_train, y_train)
+        # Output model artifacts: pickled model and JSON list of features
+        pickle.dump(
+            model, open(output_dir / f"model_{i + 1}.pkl", "wb")
+        )  # Added initial model version number.
+        json.dump(
+            list(x_train.columns),
+            open(output_dir / f"model_{i + 1}_features.json", "w"),
+        )
+        print(f"Model and features saved to {output_dir.resolve()}")
+
+        y_hat = model.predict(_x_test)
+        r2 = model.score(_x_test, _y_test)
+        mse = mean_squared_error(_y_test, y_hat)
+        mape = mean_absolute_percentage_error(_y_test, y_hat)
+        print(f"Model {i + 1} evaluation:")
+        print(f"{str(model._final_estimator)}")
+        print(f"R^2 score: {r2}")
+        print(f"Mean Squared Error (MSE): {mse}")
+        print(f"Mean Absolute Percentage Error (MAPE): {mape}")
+        print("" + "-" * 40)
 
 
 if __name__ == "__main__":
