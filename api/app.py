@@ -2,11 +2,12 @@ import logging
 import os
 import json
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict
+from typing import List
 import pickle
 from contextlib import asynccontextmanager
 from pandas import read_csv, DataFrame
+from sklearn.pipeline import Pipeline
 
 
 MODEL_DIR = "model"  # Directory where model files are stored
@@ -39,16 +40,25 @@ class PredictionSubset(BaseModel):
     bathrooms: int
     sqft_living: float
     sqft_lot: float
-    floors: int
+    floors: float
     sqft_above: float
     sqft_basement: float
     zipcode: str
 
+    model_config = ConfigDict(extra="forbid")
 
-def load_model(model_name: str):
+
+class Model(BaseModel):
+    version: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def load_model(model_version: int) -> Pipeline:
     """Load a model from a pickle file."""
+
     try:
-        with open(f"{MODEL_DIR}/{model_name}", "rb") as f:
+        with open(f"{MODEL_DIR}/model_{model_version}.pkl", "rb") as f:
             model = pickle.load(f)
         return model
     except FileNotFoundError:
@@ -57,7 +67,7 @@ def load_model(model_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def load_demographics_data():
+def load_demographics_data() -> DataFrame:
     """Load demographics data from a CSV file."""
     demographics_path = os.path.join(DATA_DIR, "zipcode_demographics.csv")
     try:
@@ -69,10 +79,10 @@ def load_demographics_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def load_features():
+def load_features() -> dict:
     """Load features from a JSON file."""
     features_path = os.path.join(
-        MODEL_DIR, f"model_{app.state.latest_model}_features.json"
+        MODEL_DIR, f"model_{app.state.latest_model_version}_features.json"
     )
     try:
         with open(features_path, "r") as f:
@@ -99,13 +109,13 @@ async def lifespan(app: FastAPI):
             status_code=500, detail="No model files found in the model directory"
         )
 
-    app.state.latest_model = max(models_versions_list)
-    logger.info(f"### Latest model version found: {app.state.latest_model}")
-    app.state.latest_model_filename = f"model_{app.state.latest_model}.pkl"
+    app.state.latest_model_version = max(models_versions_list)
+    logger.info(f"### Latest model version found: {app.state.latest_model_version}")
+    app.state.latest_model_filename = f"model_{app.state.latest_model_version}.pkl"
     app.state.model = None
 
     try:
-        app.state.model = load_model(app.state.latest_model_filename)
+        app.state.model = load_model(app.state.latest_model_version)
         logger.info(f"### Model {app.state.latest_model_filename} loaded successfully.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
@@ -132,7 +142,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-@app.post("/predict")
+@app.post("/predictions/all")
 async def make_prediction(request_data: Request) -> List[Prediction]:
     """Endpoint to make predictions using the loaded model."""
     if app.state.model is None:
@@ -147,18 +157,46 @@ async def make_prediction(request_data: Request) -> List[Prediction]:
     predictions = app.state.model.predict(data_df)
     return [Prediction(price=price) for price in predictions]
 
-    # try:
-    #     input_data = {
-    #         "name": [request_data.name],
-    #         "value": [request_data.value],
-    #         "description": [request_data.description or ""],
-    #     }
-    #     input_df = read_csv(input_data)
-    #     prediction = app.state.model.predict(input_df)
-    #     return {"prediction": prediction.tolist()}
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predictions/subset")
+async def make_prediction_subset(
+    prediction_subset_list: List[PredictionSubset],
+) -> List[Prediction]:
+    """Endpoint to make predictions using a subset of features."""
+    if app.state.model is None:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+
+    data_df = DataFrame(prediction_subset_list)
+    data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
+        columns="zipcode"
+    )
+    predictions = app.state.model.predict(data_df)
+    return [Prediction(price=price) for price in predictions]
 
 
-# @app.post("/predict_subset")
-# async def make_prediction_subset(request_data: Request) -> List[Prediction]:
+@app.post("/models/update")
+async def update_model(model: Model) -> dict:
+    """Endpoint to update the model to a new version."""
+    try:
+        app.state.model = load_model(model.version)
+        app.state.latest_model_version = model.version
+        app.state.latest_model_filename = f"model_{model.version}.pkl"
+        logger.info(f"### Model updated to version {model.version} successfully.")
+        return {"message": f"Model updated to version {model.version} successfully."}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update model: {str(e)}")
+
+
+@app.get("/models/list")
+async def list_models() -> List[Model]:
+    """Endpoint to list available model versions."""
+    models_versions_list = [
+        int(f.split("_")[1].split(".")[0])
+        for f in os.listdir(MODEL_DIR)
+        if f.endswith(".pkl")
+    ]
+    if not models_versions_list:
+        raise HTTPException(status_code=404, detail="No models found")
+    return [Model(version=version) for version in sorted(models_versions_list)]
