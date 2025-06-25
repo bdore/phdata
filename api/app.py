@@ -30,7 +30,7 @@ logger.setLevel(logging.INFO)
 
 class UnseenHousingDataSubset(BaseModel):
     bedrooms: int
-    bathrooms: int
+    bathrooms: float
     sqft_living: float
     sqft_lot: float
     floors: float
