@@ -1,7 +1,7 @@
 FROM python:3.9-slim
 WORKDIR /app
-COPY ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+COPY ./requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 COPY ./api /app/api
 COPY ./model /app/model
 COPY ./data /app/data
