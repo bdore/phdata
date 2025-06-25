@@ -2,7 +2,6 @@ import logging
 import os
 import json
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict
 from typing import List
 import pickle
@@ -11,8 +10,8 @@ from pandas import read_csv, DataFrame
 from sklearn.pipeline import Pipeline
 
 
-MODEL_DIR = "model"  # Directory where model files are stored
-DATA_DIR = "data"  # Directory where data files are stored
+MODEL_DIR = "model"
+DATA_DIR = "data"
 SALES_COLUMN_SELECTION = [
     "bedrooms",
     "bathrooms",
@@ -26,10 +25,6 @@ SALES_COLUMN_SELECTION = [
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
-
-
-class PredictionData(BaseModel):
-    features: list = SALES_COLUMN_SELECTION
 
 
 class PredictionSubset(BaseModel):
@@ -47,7 +42,7 @@ class PredictionSubset(BaseModel):
         json_schema_extra={
             "example": {
                 "bedrooms": 4,
-                "bathrooms": 1.0,
+                "bathrooms": 1,
                 "sqft_living": 1680,
                 "sqft_lot": 5043,
                 "floors": 1.5,
@@ -61,6 +56,10 @@ class PredictionSubset(BaseModel):
 
 class Model(BaseModel):
     version: int
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"version": 2}},
+    )
 
 
 class Prediction(BaseModel):
@@ -131,9 +130,9 @@ async def lifespan(app: FastAPI):
             status_code=500, detail="No model files found in the model directory"
         )
 
-    app.state.latest_model_version = max(models_versions_list)
-    logger.info(f"### Latest model version found: {app.state.latest_model_version}")
-    app.state.latest_model_filename = f"model_{app.state.latest_model_version}.pkl"
+    app.state.models_qty = len(models_versions_list)
+    logger.info(f"### Number of model versions found: {app.state.models_qty}")
+    app.state.latest_model_filename = f"model_{app.state.models_qty}.pkl"
     app.state.model = None
 
     try:
@@ -157,25 +156,6 @@ async def lifespan(app: FastAPI):
         raise HTTPException(
             status_code=500, detail=f"Failed to load features: {str(e)}"
         )
-
-    # openapi_schema = get_openapi(
-    #     title="Home Price Prediction API",
-    #     version="1.0.0",
-    #     description="API for predicting home prices using machine learning models.",
-    #     routes=app.routes,
-    # )
-
-    # openapi_schema["components"]["schemas"]["PredictionSubset"].example = {
-    #     "bedrooms": 4,
-    #     "bathrooms": 1.0,
-    #     "sqft_living": 1680,
-    #     "sqft_lot": 5043,
-    #     "floors": 1.5,
-    #     "sqft_above": 1680,
-    #     "sqft_basement": 0,
-    #     "zipcode": "98118",
-    # }
-    # app.openapi_schema = openapi_schema
 
     yield
 
