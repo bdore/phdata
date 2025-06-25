@@ -27,7 +27,7 @@ logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
 
 
-class PredictionSubset(BaseModel):
+class UnseenHousingDataSubset(BaseModel):
     bedrooms: int
     bathrooms: int
     sqft_living: float
@@ -54,6 +54,44 @@ class PredictionSubset(BaseModel):
     )
 
 
+class UnseenHousingData(UnseenHousingDataSubset):
+    waterfront: int
+    view: int
+    condition: int
+    grade: int
+    yr_built: int
+    yr_renovated: int
+    lat: float
+    long: float
+    sqft_living15: float
+    sqft_lot15: float
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "bedrooms": 4,
+                "bathrooms": 1.0,
+                "sqft_living": 1680,
+                "sqft_lot": 5043,
+                "floors": 1.5,
+                "waterfront": 0,
+                "view": 0,
+                "condition": 4,
+                "grade": 6,
+                "sqft_above": 1680,
+                "sqft_basement": 0,
+                "yr_built": 1911,
+                "yr_renovated": 0,
+                "zipcode": "98118",
+                "lat": 47.5354,
+                "long": -122.273,
+                "sqft_living15": 1560,
+                "sqft_lot15": 5765,
+            }
+        },
+    )
+
+
 class Model(BaseModel):
     version: int
 
@@ -66,9 +104,13 @@ class Prediction(BaseModel):
     price: float
 
 
-class ApiResponse(BaseModel):
+class PredictionResponse(BaseModel):
     predictions: List[Prediction]
     model: Model
+
+
+class ApiMessage(BaseModel):
+    message: str
 
 
 def load_model(model_version: int) -> Pipeline:
@@ -164,19 +206,21 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/predictions/all")
-async def make_prediction(request_data: Request) -> ApiResponse:
+async def make_prediction(
+    unseen_data_list: List[UnseenHousingData],
+) -> PredictionResponse:
     """Endpoint to make predictions using the loaded model."""
     if app.state.model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
-    data = await request_data.json()
+    data = DataFrame([dict(x) for x in unseen_data_list])
     data_df = DataFrame(data)
     data_df = data_df[SALES_COLUMN_SELECTION]
     data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
         columns="zipcode"
     )
     predictions = app.state.model.predict(data_df)
-    return ApiResponse(
+    return PredictionResponse(
         predictions=[Prediction(price=price) for price in predictions],
         model=Model(version=app.state.model_version),
     )
@@ -184,8 +228,8 @@ async def make_prediction(request_data: Request) -> ApiResponse:
 
 @app.post("/predictions/subset")
 async def make_prediction_subset(
-    prediction_subset_list: List[PredictionSubset],
-) -> ApiResponse:
+    prediction_subset_list: List[UnseenHousingDataSubset],
+) -> PredictionResponse:
     """Endpoint to make predictions using a subset of features."""
     if app.state.model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
@@ -195,20 +239,20 @@ async def make_prediction_subset(
         columns="zipcode"
     )
     predictions = app.state.model.predict(data_df)
-    return ApiResponse(
+    return PredictionResponse(
         predictions=[Prediction(price=price) for price in predictions],
         model=Model(version=app.state.model_version),
     )
 
 
 @app.post("/models/select")
-async def select_model(model: Model) -> dict:
+async def select_model(model: Model) -> ApiMessage:
     """Endpoint to select a new model version."""
     try:
         load_model(model.version)
         message = f"Model version {model.version} selected successfully."
         logger.info(f"### Model version {model.version} selected successfully.")
-        return {"message": message}
+        return ApiMessage(message=message)
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -224,6 +268,8 @@ async def list_models() -> List[Model]:
         if f.endswith(".pkl")
     ]
     models_versions_list.sort(reverse=True)
+
     if not models_versions_list:
         raise HTTPException(status_code=404, detail="No models found")
+
     return [Model(version=version) for version in models_versions_list]
