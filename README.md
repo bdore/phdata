@@ -1,22 +1,33 @@
+## Project setup
+
+### Step 1
+Use the provided conda environment file to create the python env. Activate and install modules: 
+
+`pip install -r requirements.txt`
+
+### Step 2
+Run the create_model.py file. This will generate two models: one that is given in the challenge and a second one using a different machine learning algorithm. The latter will be used as an example of a model update.
+
+`python create_model.py`
+
+### Step 3
+Build the docker image and run the container:
+
+`docker build . -t phdatachallenge && docker run --name phdatachallenge_api -d -p 8000:8000 phdatachallenge`
+
+### Step 4
+Access `localhost:8000/docs` for endpoint details.
+
+### Step 5
+Run the script to generate predictions on unseen data.
+
+`python predictions_unseen.py`
+
+---
+
 ![phData Logo](phData.png "phData Logo")
 
 # phData Machine Learning Engineer Candidate Project
-
-## Project setup
-
-1. `pip install -r requirements.txt`
-2. `python create_model.py`
-3. `docker build . -t phdatachallenge && docker run --name phdatachallenge_api -d -p 8000:8000 phdatachallenge`
-4. `localhost:8000/docs`
-
-### Step 1
-Install modules in a python 3.9 environment.
-
-### Step 2
-Run the create_model.py file. This will generate two models: one that is given in the challenge and a second one using a different machine learning algorithm. This one will be used as an example of a model update.
-
-### Step 3
-Build the docker image and run the container.
 
 
 phData wants the interview process to – as best as possible – reflect
