@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 COPY ./api /app/api
 COPY ./model /app/model
 COPY ./data /app/data
-CMD ["gunicorn", "api.app:app", "-k", "uvicorn.workers.UvicornWorker", "--workers", "4", "--bind", "0.0.0.0:8000", "--graceful-timeout", "30"]
+CMD ["gunicorn", "api.app:app", "-k", "uvicorn.workers.UvicornWorker", "--workers", "2", "--bind", "0.0.0.0:8000", "--graceful-timeout", "30"]
