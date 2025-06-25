@@ -1,12 +1,13 @@
+import json
 import logging
 import os
-import json
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
-from typing import List
 import pickle
 from contextlib import asynccontextmanager
-from pandas import read_csv, DataFrame
+from typing import List
+
+from fastapi import FastAPI, HTTPException
+from pandas import DataFrame, read_csv
+from pydantic import BaseModel, ConfigDict
 from sklearn.pipeline import Pipeline
 
 
