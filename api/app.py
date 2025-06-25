@@ -159,6 +159,31 @@ def load_features() -> dict:
         )
 
 
+def preprocess_data(data_list: List, use_column_selection: bool = False) -> DataFrame:
+    """Helper function to prepare data for prediction."""
+    data_df = DataFrame([dict(x) for x in data_list])
+
+    if use_column_selection:
+        data_df = data_df[SALES_COLUMN_SELECTION]
+
+    data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
+        columns="zipcode"
+    )
+    return data_df
+
+
+def generate_predictions(data_df: DataFrame) -> PredictionResponse:
+    """Helper function to make predictions and return response."""
+    if app.state.model is None:
+        raise HTTPException(status_code=500, detail="Model not loaded")
+
+    predictions = app.state.model.predict(data_df)
+    return PredictionResponse(
+        predictions=[Prediction(price=price) for price in predictions],
+        model=Model(version=app.state.model_version),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models_versions_list = [
@@ -206,24 +231,12 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/predictions/all")
-async def make_prediction(
+async def make_prediction_all(
     unseen_data_list: List[UnseenHousingData],
 ) -> PredictionResponse:
     """Endpoint to make predictions using the loaded model."""
-    if app.state.model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded")
-
-    data = DataFrame([dict(x) for x in unseen_data_list])
-    data_df = DataFrame(data)
-    data_df = data_df[SALES_COLUMN_SELECTION]
-    data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
-        columns="zipcode"
-    )
-    predictions = app.state.model.predict(data_df)
-    return PredictionResponse(
-        predictions=[Prediction(price=price) for price in predictions],
-        model=Model(version=app.state.model_version),
-    )
+    data_df = preprocess_data(unseen_data_list, use_column_selection=True)
+    return generate_predictions(data_df)
 
 
 @app.post("/predictions/subset")
@@ -231,18 +244,8 @@ async def make_prediction_subset(
     prediction_subset_list: List[UnseenHousingDataSubset],
 ) -> PredictionResponse:
     """Endpoint to make predictions using a subset of features."""
-    if app.state.model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded")
-
-    data_df = DataFrame([dict(x) for x in prediction_subset_list])
-    data_df = data_df.merge(app.state.demographics_data, how="left", on="zipcode").drop(
-        columns="zipcode"
-    )
-    predictions = app.state.model.predict(data_df)
-    return PredictionResponse(
-        predictions=[Prediction(price=price) for price in predictions],
-        model=Model(version=app.state.model_version),
-    )
+    data_df = preprocess_data(prediction_subset_list, use_column_selection=False)
+    return generate_predictions(data_df)
 
 
 @app.post("/models/select")
